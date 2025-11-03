@@ -1,36 +1,42 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using MilleniumTest.Interfaces;
-using MilleniumTest.Model;
+﻿using MediatR;
+using Domain.Model;
+using Microsoft.AspNetCore.Mvc;
+using Application.Accounts.Querries;
+using Application.Accounts.Querries.GetAllAccounts;
+using Application.Accounts.Querries.GetAccountById;
+using Application.Accounts.Commands.CreateAccount;
+using Application.Accounts.Commands.UpdateAccount;
+using Application.Accounts.Commands.DeleteAccount;
 
-namespace MilleniumTest.Controllers
+namespace WebAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
     public class AccountController : ControllerBase
     {
-        private readonly IAccountHandler _handler;
+        private readonly IMediator _mediator;
         private readonly ILogger<AccountController> _logger;
 
-        public AccountController(IAccountHandler handler, ILogger<AccountController> logger)
+        public AccountController(IMediator mediator, ILogger<AccountController> logger)
         {
-            _handler = handler;
+            _mediator = mediator;
             _logger = logger;
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Account>>> GetAll()
+        public async Task<ActionResult<IEnumerable<AccountDto>>> GetAll()
         {
             _logger.LogInformation("GetAll");
-            IEnumerable<Account> result = await _handler.GetAccountsAsync();
 
-            return Ok(result);
+            IEnumerable<AccountDto> accounts = await _mediator.Send(new GetAllAccountsQuery());
+            return Ok(accounts);
         }
 
         [HttpGet("{id}")]
         public async Task<ActionResult<Account>> GetById(int id)
         {
             _logger.LogInformation($"GetById({id})");
-            Account? account = await _handler.GetByIdAsync(id);
+            AccountDto? account = await _mediator.Send(new GetAccountByIdQuery(id));
             
             if (account == null) 
                 return NotFound();
@@ -39,48 +45,27 @@ namespace MilleniumTest.Controllers
         }
 
         [HttpPost]
-        public async Task<ActionResult<int>> Create(Account account)
+        public async Task<ActionResult<int>> Create(CreateAccountCommand command)
         {
-            //Tutaj warto by rozdzielić Account na AccountCreateDTO i AccountUpdateDTO, żeby przy Create niepotrzebnie nie przyjmować Id, ale zabrakło mi czasu
-            _logger.LogInformation($"Create, {account.FirstName} {account.LastName}");
+            _logger.LogInformation($"Create, {command.FirstName} {command.LastName}");
 
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
-
-            Account? created = await _handler.CreateAsync(account);
-
-            if (created == null)
-                return StatusCode(500);
-            
-            return Ok(created.Id);
+            int id = await _mediator.Send(command);
+            return CreatedAtAction(nameof(GetById), new { id = id }, null);
         }
 
         [HttpPut()]
-        public async Task<ActionResult> Update(Account updated)
+        public async Task<ActionResult> Update(UpdateAccountCommand command)
         {
-            _logger.LogInformation($"Update, id: {updated.Id}");
+            _logger.LogInformation($"Update, id: {command.Id}");
 
-            //Tutaj warto by rozdzielić Account na AccountCreateDTO i AccountUpdateDTO, z różną wymagalnością atrybutów, żeby niepotrzebnie nie wymagać imienia i nazwiska, ale zabrakło mi czasu
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
-
-            bool result = await _handler.UpdateAsync(updated);
-            
-            if (!result) 
-                return NotFound();
-
-            return Ok();
+            await _mediator.Send(command);
+            return NoContent();
         }
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
-            _logger.LogInformation($"Delete({id})");
-            bool deleted = await _handler.DeleteAsync(id);
-            
-            if (!deleted) 
-                return NotFound();
-            
+            await _mediator.Send(new DeleteAccountCommand(id));
             return NoContent();
         }
     }
