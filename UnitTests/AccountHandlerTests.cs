@@ -1,8 +1,7 @@
+using Domain.Model;
+using Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using MilleniumTest.Data;
-using MilleniumTest.Handlers;
-using MilleniumTest.Model;
 using Moq;
 
 namespace UnitTests
@@ -22,11 +21,11 @@ namespace UnitTests
 
         private AccountHandler GetHandlerWithInMemoryDb()
         {
-            var options = new DbContextOptionsBuilder<TestDbContext>()
+            var options = new DbContextOptionsBuilder<ServiceDbContext>()
                 .UseInMemoryDatabase(databaseName: "TestDb")
                 .Options;
 
-            TestDbContext context = new TestDbContext(options);
+            ServiceDbContext context = new ServiceDbContext(options);
 
             var loggerMock = new Mock<ILogger<AccountHandler>>();
 

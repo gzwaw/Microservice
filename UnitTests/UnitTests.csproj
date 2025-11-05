@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\MilleniumTest\MilleniumTest.csproj" />
+    <ProjectReference Include="..\MilleniumTest\WebAPI.csproj" />
   </ItemGroup>
 
   <ItemGroup>
