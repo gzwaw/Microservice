@@ -5,6 +5,7 @@ using AutoMapper;
 using Domain.Model;
 using Domain.RepositoryInterfaces;
 using Infrastructure.Data;
+using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -13,40 +14,43 @@ namespace UnitTests
 {
     public class AccountHandlerTests
     {
-        private CreateAccountCommand _createCommand = new CreateAccountCommand(
-            FirstName: "Jan",
-            LastName: "Nowak",
-            CompanyName: "NowakSoft",
-            Email: "jnowak@nowaksoft.com",
-            PhoneNo: "123-456-789",
-            Location: "Warszawa");
+        private CreateAccountCommand GetCreateCommandTemplate() => new CreateAccountCommand
+        {
+            FirstName = "Jan",
+            LastName = "Nowak",
+            CompanyName = "NowakSoft",
+            Email = "jnowak@nowaksoft.com",
+            PhoneNo = "123-456-789",
+            Location = "Warszawa"
+        };
 
-        private readonly UpdateAccountCommand _updateCommandTemplate = new UpdateAccountCommand(
-            FirstName: "Janusz",
-            LastName: "Kowalski",
-            CompanyName: "KowalskiCorp",
-            Email: "jk@kowalskicorp.com",
-            PhoneNo: "987-654-321",
-            Location: "Kraków",
-            Id: 0 
-        );
+        private UpdateAccountCommand GetUpdateCommandTemplate() => new UpdateAccountCommand
+        {
+            FirstName = "Janusz",
+            LastName = "Kowalski",
+            CompanyName = "KowalskiCorp",
+            Email = "jk@kowalskicorp.com",
+            PhoneNo = "987-654-321",
+            Location = "Kraków",
+            Id = 0
+        };
 
         private ServiceDbContext GetContext()
-        { 
+        {
             var options = new DbContextOptionsBuilder<ServiceDbContext>()
-                .UseInMemoryDatabase(databaseName: "TestDb") // nazwa unikalna dla testu
+                .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
                 .Options;
 
             return new ServiceDbContext(options);
         }
 
-        private IAccountRepository GetAccountRepository()
+        private IAccountRepository GetAccountRepository(ServiceDbContext context)
         {
-            new AccountRepository(GetContext());
+            return new AccountRepository(context);
         }
 
         private IMapper GetMapper()
-        { 
+        {
             var loggerFactoryMock = new Mock<ILoggerFactory>();
             loggerFactoryMock.Setup(lf => lf.CreateLogger(It.IsAny<string>()))
                              .Returns(new Mock<ILogger>().Object);
@@ -54,90 +58,96 @@ namespace UnitTests
             MapperConfiguration mapperConfig = new MapperConfiguration(cfg =>
             {
                 cfg.AddProfile<Application.Mappings.AccountMapping>();
-            },loggerFactoryMock.Object);
+            }, loggerFactoryMock.Object);
 
-            return mapperConfig.CreateMapper();     
+            return mapperConfig.CreateMapper();
         }
 
-        private CreateAccountHandler GetCreateHandler(out Mock<IAccountRepository> repoMock)
+        private CreateAccountHandler GetCreateHandler(ServiceDbContext context)
         {
-            repoMock = new Mock<IAccountRepository>();
-            repoMock.Setup(r => r.AddAsync(It.IsAny<Account>()))
-                .Callback<Account>(acc => acc.Id = 1)
-                .Returns(Task.CompletedTask);
-
-            return new CreateAccountHandler(repoMock.Object, GetMapper());
+            return new CreateAccountHandler(GetAccountRepository(context), GetMapper());
         }
-
-        private UpdateAccountHandler GetUpdateHandler(Mock<IAccountRepository> repoMock)
+        private UpdateAccountHandler GetUpdateHandler(ServiceDbContext context)
         {
-            return new UpdateAccountHandler(repoMock.Object, GetMapper());
+            return new UpdateAccountHandler(GetAccountRepository(context), GetMapper());
         }
-
-        private DeleteAccountHandler GetDeleteHandler(Mock<IAccountRepository> repoMock)
+        private DeleteAccountHandler GetDeleteHandler(ServiceDbContext context)
         {
-            return new DeleteAccountHandler(repoMock.Object);
+            return new DeleteAccountHandler(GetAccountRepository(context));
         }
-
 
         [Fact]
         public async Task CreateAccount_Test()
         {
-            Mock<IAccountRepository> repoMock;
-            var handler = GetCreateHandler(out repoMock);
+            ServiceDbContext context = GetContext();
+            CreateAccountHandler handler = GetCreateHandler(context);
 
-            int id = await handler.Handle(_createCommand, CancellationToken.None);
+            CreateAccountCommand createCommand = GetCreateCommandTemplate();
+            int id = await handler.Handle(createCommand, CancellationToken.None);
 
             Assert.True(id > 0);
 
-            repoMock.Verify(r => r.AddAsync(It.IsAny<Account>()), Times.Once);
+            Account? acc = await context.Accounts.FindAsync(id);
+
+            Assert.NotNull(acc);
+            Assert.Equal(createCommand.FirstName, acc.FirstName);
+            Assert.Equal(createCommand.LastName, acc.LastName);
+            Assert.Equal(createCommand.CompanyName, acc.CompanyName);
+            Assert.Equal(createCommand.Email, acc.Email);
+            Assert.Equal(createCommand.PhoneNo, acc.PhoneNo);
+            Assert.Equal(createCommand.Location, acc.Location);
         }
 
         [Fact]
         public async Task UpdateAccount_Test()
         {
-            Mock<IAccountRepository> repoMock;
-            CreateAccountHandler createHandler = GetCreateHandler(out repoMock);
-            UpdateAccountHandler updateHandler = GetUpdateHandler(repoMock);
+            ServiceDbContext context = GetContext();
+            CreateAccountHandler createHandler = GetCreateHandler(context);
+            UpdateAccountHandler updateHandler = GetUpdateHandler(context);
 
-            int id = await createHandler.Handle(_createCommand, CancellationToken.None);
+            int id = await createHandler.Handle(GetCreateCommandTemplate(), CancellationToken.None);
             Assert.True(id > 0);
 
-            UpdateAccountCommand updateCommand = _updateCommandTemplate with { Id = id };
+            var _updateCommand = GetUpdateCommandTemplate();
+            _updateCommand.Id = id;
 
-            await updateHandler.Handle(updateCommand, CancellationToken.None);
+            await updateHandler.Handle(_updateCommand, CancellationToken.None);
 
-            repoMock.Verify(r => r.UpdateAsync(It.Is<Account>(a => a.Id == id &&
-                                                                   a.FirstName == updateCommand.FirstName &&
-                                                                   a.LastName == updateCommand.LastName)), Times.Once);
+            Account? acc = await context.Accounts.FindAsync(id);
+
+            Assert.NotNull(acc);
+            Assert.Equal(_updateCommand.FirstName, acc.FirstName);
+            Assert.Equal(_updateCommand.LastName, acc.LastName);
+            Assert.Equal(_updateCommand.CompanyName, acc.CompanyName);
+            Assert.Equal(_updateCommand.Email, acc.Email);
+            Assert.Equal(_updateCommand.PhoneNo, acc.PhoneNo);
+            Assert.Equal(_updateCommand.Location, acc.Location);
         }
 
         [Fact]
-        public async Task DeleteAccount_WhenAccountExists()
+        public async Task DeleteAccount_Test()
         {
-            Mock<IAccountRepository> repoMock;
-            CreateAccountHandler createHandler = GetCreateHandler(out repoMock);
-            DeleteAccountHandler deleteHandler = GetDeleteHandler(repoMock);
+            ServiceDbContext context = GetContext();
+            CreateAccountHandler createHandler = GetCreateHandler(context);
+            DeleteAccountHandler deleteHandler = GetDeleteHandler(context);
 
-            int id = await createHandler.Handle(_createCommand, CancellationToken.None);
+            int id = await createHandler.Handle(GetCreateCommandTemplate(), CancellationToken.None);
             Assert.True(id > 0);
 
             await deleteHandler.Handle(new DeleteAccountCommand(id), CancellationToken.None);
 
-            repoMock.Verify(r => r.DeleteAsync(id), Times.Once);
+            Account? acc = await context.Accounts.FindAsync(id);
+
+            Assert.Null(acc);
         }
 
-        [Fact]
-        public async Task DeleteAccount_WhenAccountDoesNotExist()
-        {
-            Mock<IAccountRepository> repoMock = new Mock<IAccountRepository>();
-            DeleteAccountHandler deleteHandler = GetDeleteHandler(repoMock);
+        //TODO:
+        /*
+         Testy negatywne
+         - update/delete na nieistniej¹cym rekordzie
 
-            int id = -1;
-
-            await deleteHandler.Handle(new DeleteAccountCommand(id), CancellationToken.None);
-
-            repoMock.Verify(r => r.DeleteAsync(id), Times.Once); 
-        }
+        Testy walidacji
+         - create/update z nieprawid³owym adresem email (wywali Fluent Validation)
+         */
     }
 }
