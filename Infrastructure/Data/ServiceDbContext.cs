@@ -5,8 +5,7 @@ namespace Infrastructure.Data
 {
     public class ServiceDbContext : DbContext
     {
-        public ServiceDbContext(DbContextOptions<ServiceDbContext> options) : base(options) { }
-
         public DbSet<Account> Accounts { get; set; }
+        public ServiceDbContext(DbContextOptions<ServiceDbContext> options) : base(options) { }
     }
 }

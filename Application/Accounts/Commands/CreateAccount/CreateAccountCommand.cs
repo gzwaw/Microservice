@@ -2,5 +2,18 @@
 
 namespace Application.Accounts.Commands.CreateAccount
 {
-    public record CreateAccountCommand(string FirstName, string LastName, string CompanyName, string Email, string PhoneNo, string Location) : IRequest<int>;
+    public class CreateAccountCommand : IRequest<int>
+    {
+        public string? FirstName { get; set; }
+        public string? LastName { get; set; }
+        public string? CompanyName { get; set; }
+        public string? Email { get; set; }
+        public string? PhoneNo { get; set; }
+        public string? Location { get; set; }
+
+        public CreateAccountCommand Copy()
+        {
+            return new CreateAccountCommand { FirstName = FirstName, LastName = LastName, CompanyName = CompanyName, Email = Email, PhoneNo = PhoneNo };
+        }
+    }
 }

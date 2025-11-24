@@ -1,5 +1,11 @@
+using Application.Accounts.Commands.CreateAccount;
+using Application.Accounts.Commands.DeleteAccount;
+using Application.Accounts.Commands.UpdateAccount;
+using AutoMapper;
 using Domain.Model;
+using Domain.RepositoryInterfaces;
 using Infrastructure.Data;
+using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -8,9 +14,8 @@ namespace UnitTests
 {
     public class AccountHandlerTests
     {
-        private Account _tstAcc = new Account
+        private CreateAccountCommand GetCreateCommandTemplate() => new CreateAccountCommand
         {
-            Id = 1,
             FirstName = "Jan",
             LastName = "Nowak",
             CompanyName = "NowakSoft",
@@ -19,59 +24,130 @@ namespace UnitTests
             Location = "Warszawa"
         };
 
-        private AccountHandler GetHandlerWithInMemoryDb()
+        private UpdateAccountCommand GetUpdateCommandTemplate() => new UpdateAccountCommand
+        {
+            FirstName = "Janusz",
+            LastName = "Kowalski",
+            CompanyName = "KowalskiCorp",
+            Email = "jk@kowalskicorp.com",
+            PhoneNo = "987-654-321",
+            Location = "Kraków",
+            Id = 0
+        };
+
+        private ServiceDbContext GetContext()
         {
             var options = new DbContextOptionsBuilder<ServiceDbContext>()
-                .UseInMemoryDatabase(databaseName: "TestDb")
+                .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
                 .Options;
 
-            ServiceDbContext context = new ServiceDbContext(options);
+            return new ServiceDbContext(options);
+        }
 
-            var loggerMock = new Mock<ILogger<AccountHandler>>();
+        private IAccountRepository GetAccountRepository(ServiceDbContext context)
+        {
+            return new AccountRepository(context);
+        }
 
-            return new AccountHandler(context, loggerMock.Object);
+        private IMapper GetMapper()
+        {
+            var loggerFactoryMock = new Mock<ILoggerFactory>();
+            loggerFactoryMock.Setup(lf => lf.CreateLogger(It.IsAny<string>()))
+                             .Returns(new Mock<ILogger>().Object);
+
+            MapperConfiguration mapperConfig = new MapperConfiguration(cfg =>
+            {
+                cfg.AddProfile<Application.Mappings.AccountMapping>();
+            }, loggerFactoryMock.Object);
+
+            return mapperConfig.CreateMapper();
+        }
+
+        private CreateAccountHandler GetCreateHandler(ServiceDbContext context)
+        {
+            return new CreateAccountHandler(GetAccountRepository(context), GetMapper());
+        }
+        private UpdateAccountHandler GetUpdateHandler(ServiceDbContext context)
+        {
+            return new UpdateAccountHandler(GetAccountRepository(context), GetMapper());
+        }
+        private DeleteAccountHandler GetDeleteHandler(ServiceDbContext context)
+        {
+            return new DeleteAccountHandler(GetAccountRepository(context));
         }
 
         [Fact]
         public async Task CreateAccount_Test()
         {
-            AccountHandler handler = GetHandlerWithInMemoryDb();
-            Account? created = await handler.CreateAsync(_tstAcc);
+            ServiceDbContext context = GetContext();
+            CreateAccountHandler handler = GetCreateHandler(context);
 
-            Assert.NotNull(created);
-            Assert.Equal("Jan", created.FirstName);
-            Assert.Equal("Nowak", created.LastName);
-            Assert.Equal("NowakSoft", created.CompanyName);
-            Assert.Equal("jnowak@nowaksoft.com", created.Email);
-            Assert.Equal("123-456-789", created.PhoneNo);
-            Assert.Equal("Warszawa", created.Location);
-            Assert.True(created.Id > 0);
+            CreateAccountCommand createCommand = GetCreateCommandTemplate();
+            int id = await handler.Handle(createCommand, CancellationToken.None);
+
+            Assert.True(id > 0);
+
+            Account? acc = await context.Accounts.FindAsync(id);
+
+            Assert.NotNull(acc);
+            Assert.Equal(createCommand.FirstName, acc.FirstName);
+            Assert.Equal(createCommand.LastName, acc.LastName);
+            Assert.Equal(createCommand.CompanyName, acc.CompanyName);
+            Assert.Equal(createCommand.Email, acc.Email);
+            Assert.Equal(createCommand.PhoneNo, acc.PhoneNo);
+            Assert.Equal(createCommand.Location, acc.Location);
         }
 
         [Fact]
-        public async Task DeleteAccount_WhenAccountExists()
+        public async Task UpdateAccount_Test()
         {
-            AccountHandler handler = GetHandlerWithInMemoryDb();
-            Account? created = await handler.CreateAsync(_tstAcc);
+            ServiceDbContext context = GetContext();
+            CreateAccountHandler createHandler = GetCreateHandler(context);
+            UpdateAccountHandler updateHandler = GetUpdateHandler(context);
 
-            Assert.NotNull(created);
+            int id = await createHandler.Handle(GetCreateCommandTemplate(), CancellationToken.None);
+            Assert.True(id > 0);
 
-            if (created != null)
-            {
-                bool deleted = await handler.DeleteAsync(created.Id);
-                
-                Assert.True(deleted);
-            }
+            var _updateCommand = GetUpdateCommandTemplate();
+            _updateCommand.Id = id;
+
+            await updateHandler.Handle(_updateCommand, CancellationToken.None);
+
+            Account? acc = await context.Accounts.FindAsync(id);
+
+            Assert.NotNull(acc);
+            Assert.Equal(_updateCommand.FirstName, acc.FirstName);
+            Assert.Equal(_updateCommand.LastName, acc.LastName);
+            Assert.Equal(_updateCommand.CompanyName, acc.CompanyName);
+            Assert.Equal(_updateCommand.Email, acc.Email);
+            Assert.Equal(_updateCommand.PhoneNo, acc.PhoneNo);
+            Assert.Equal(_updateCommand.Location, acc.Location);
         }
 
         [Fact]
-        public async Task DeleteAccount_WhenAccountDoesNotExist()
+        public async Task DeleteAccount_Test()
         {
-            AccountHandler handler = GetHandlerWithInMemoryDb();
+            ServiceDbContext context = GetContext();
+            CreateAccountHandler createHandler = GetCreateHandler(context);
+            DeleteAccountHandler deleteHandler = GetDeleteHandler(context);
 
-            bool deleted = await handler.DeleteAsync(999); 
+            int id = await createHandler.Handle(GetCreateCommandTemplate(), CancellationToken.None);
+            Assert.True(id > 0);
 
-            Assert.False(deleted);
+            await deleteHandler.Handle(new DeleteAccountCommand(id), CancellationToken.None);
+
+            Account? acc = await context.Accounts.FindAsync(id);
+
+            Assert.Null(acc);
         }
+
+        //TODO:
+        /*
+         Testy negatywne
+         - update/delete na nieistniej¹cym rekordzie
+
+        Testy walidacji
+         - create/update z nieprawid³owym adresem email (wywali Fluent Validation)
+         */
     }
 }

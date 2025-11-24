@@ -1,8 +1,10 @@
+using Application;
 using Application.Accounts.Commands.CreateAccount;
 using Application.Common.Behaviours;
-using Application.Mappings;
+using Domain.RepositoryInterfaces;
 using FluentValidation;
 using Infrastructure.Data;
+using Infrastructure.Repositories;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using WebAPI;
@@ -17,8 +19,18 @@ builder.Logging.SetMinimumLevel(LogLevel.Information);
 builder.Services.AddControllers();
 
 builder.Services.AddDbContext<ServiceDbContext>(opt => opt.UseInMemoryDatabase("AccountsDb"));
-builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
-builder.Services.AddAutoMapper(cfg => cfg.AddProfile<AccountMapping>());
+
+builder.Services.AddMediatR(cfg =>
+{
+    cfg.RegisterServicesFromAssembly(typeof(Program).Assembly);
+    cfg.RegisterServicesFromAssembly(typeof(ApplicationMarker).Assembly);
+});
+
+builder.Services.AddAutoMapper(cfg =>
+{
+    cfg.AddProfile<Application.Mappings.AccountMapping>();
+    cfg.AddProfile<WebAPI.Mappings.AccountMapping>();
+});
 
 //Rejestracja validatorów
 builder.Services.AddValidatorsFromAssemblyContaining<CreateAccountValidator>();
@@ -28,7 +40,16 @@ builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBeh
 
 //Swagger
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+//builder.Services.AddSwaggerGen();
+
+builder.Services.AddScoped<IAccountRepository, AccountRepository>();
+
+builder.Services.AddSwaggerGen(c =>
+{ 
+    string xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    string xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    c.IncludeXmlComments(xmlPath);
+});
 
 WebApplication app = builder.Build();
 
